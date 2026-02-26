@@ -1,0 +1,31 @@
+# ── Telegram session files ────────────────────────────────
+# Never commit session strings or credentials
+*.session
+*.session-journal
+session_string.txt
+session.txt
+credentials.txt
+secrets.txt
+
+# ── Test / debug output ───────────────────────────────────
+Output.txt
+output.txt
+*.log
+
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environments ──────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── OS junk ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
