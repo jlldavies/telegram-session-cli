@@ -1,30 +1,31 @@
 # Telegram Session String Generator
 
-> A standalone Python script that walks you through generating a Telethon `StringSession` — the credential string required by automation tools that connect to Telegram as a user account.
+> A diagnostic-first script for getting a Telethon `StringSession` — built for people who are struggling to connect Telegram to an MCP, automation tool, or workflow engine and need to see exactly what's going wrong.
 
-[Installation](#installation) • [Features](#features) • [How It Works](#how-it-works) • [References](#references)
+[The Problem](#the-problem) • [Installation](#installation) • [How It Works](#how-it-works) • [Features](#features) • [References](#references)
 
 ---
 
 ## The Problem
 
-Tools that automate Telegram (n8n, bots, scrapers, workflow engines) need a **session string** to authenticate as a real user account. Getting one involves:
+Most tools that connect Telegram to MCPs, n8n, bots, or other automation platforms need a **session string** to authenticate as a real user account. Getting one should be simple — but in practice it regularly fails, and when it does the tools give you almost nothing to work with:
 
-- Creating a Telegram API app at `my.telegram.org`
-- Connecting to Telegram's MTProto API with the right credentials
-- Handling 2FA, verification codes, rate limits, and multiple delivery methods
+- Sign-in codes that silently never arrive
+- No indication of *how* the code was sent (app notification? SMS? voice call?)
+- Generic errors with no fix instructions
+- Processes that just hang or exit without explanation
 
-Most guides assume technical knowledge and give no help when things go wrong.
+If you've ever stared at a blank terminal wondering why your Telegram MCP isn't connecting, this script is for you.
 
 ## The Solution
 
-A single script your colleague can run. It asks the right questions, tells you exactly what Telegram sent back at every step, and gives a plain-English fix for every error — including when the verification code doesn't arrive.
+A standalone Python script with **one dependency** that walks through every step of the connection process out loud — showing you the raw Telegram API response, exactly where your code was sent, what every field means, and a plain-English fix for every error that can occur.
 
 ```
 python3 telegram_session.py
 ```
 
-That's it. At the end you get your **API ID**, **API Hash**, and **Session String** on screen, ready to copy.
+At the end you get your **API ID**, **API Hash**, and **Session String** — ready to paste into whichever tool you're connecting.
 
 ---
 
@@ -48,7 +49,7 @@ No virtual environment needed. No config files. No `.env`. Just Python 3 and one
 
 ## How It Works
 
-The script walks through four steps:
+The script walks through four steps, printing everything at each stage:
 
 **Step 0 — Dependency check**
 Verifies `telethon` is installed. If not, prints the exact `pip install` command and exits cleanly.
@@ -56,13 +57,13 @@ Verifies `telethon` is installed. If not, prints the exact `pip install` command
 **Step 1 — API Credentials**
 Asks whether you already have your API ID and Hash.
 - If yes: enter them directly
-- If no: on-screen instructions send you to `https://my.telegram.org/apps` to get them (takes ~2 minutes)
+- If no: step-by-step instructions walk you to `https://my.telegram.org/apps` to get them (2 minutes)
 
 **Step 2 — Phone number**
-Validates format and country code before connecting.
+Validates format and country code before any connection is attempted.
 
 **Step 3 — Session string generation**
-Connects to Telegram's API, requests a sign-in code, and shows you a full debug dump of every field Telegram returned — including exactly how and where the code was delivered:
+Connects to Telegram's API, requests a sign-in code, and immediately shows a full dump of everything Telegram sent back — so you can see exactly what happened and where to look for the code:
 
 ```
 ── Telegram response (full debug dump) ──────────────────
@@ -78,61 +79,63 @@ Connects to Telegram's API, requests a sign-in code, and shows you a full debug 
 
      Telegram APP notification  (code is 5 digits)
      Look for a message from the official 'Telegram' account inside the app
-     This goes to every device where you're logged into Telegram.
+     This goes to every device where you're logged into Telegram —
+     phone, tablet, desktop, web.
      It does NOT come as an SMS.
 ```
 
-If the code doesn't arrive, you can resend via an alternative method or **force SMS delivery** (bypasses app notification entirely using a raw `SendCodeRequest` with `CodeSettings(allow_app=False)`).
+If the code still doesn't arrive, there are two further options: resend via the alternative method shown in `next_type`, or **force SMS delivery** via a raw `SendCodeRequest` with `CodeSettings(allow_app=False)` — bypassing app notification entirely.
 
 ---
 
 ## Features
 
-**Single dependency**
-Only `telethon` — no `requests`, no `beautifulsoup4`, no setup overhead.
+**Verbose by design**
+Every step prints what it's doing, what Telegram responded, and what it means in plain English. Nothing is silent.
 
 **Full Telegram response dump**
-Every field from the `SentCode` response is printed — `phone_code_hash`, `timeout`, delivery type with all attributes, and `next_type`. No guessing what Telegram actually sent back.
+Every field from the `SentCode` response is shown — `phone_code_hash`, `timeout`, delivery type and all its attributes, and `next_type`. You can see at a glance whether Telegram received the request and what delivery method it chose.
 
 **All delivery types decoded**
-Handles and explains every known `SentCodeType`:
-- `SentCodeTypeApp` — in-app notification
-- `SentCodeTypeSms` — SMS text
+Handles and explains every known `SentCodeType` with human-readable instructions:
+- `SentCodeTypeApp` — in-app notification (the most common, and the most commonly missed)
+- `SentCodeTypeSms` — SMS text message
 - `SentCodeTypeCall` — voice call
 - `SentCodeTypeFlashCall` — flash call
-- `SentCodeTypeMissedCall` — missed call (code = last digits of calling number)
-- `SentCodeTypeEmailCode` — email
+- `SentCodeTypeMissedCall` — missed call (code = last digits of the calling number)
+- `SentCodeTypeEmailCode` — email code
 - `SentCodeTypeFragmentSms` — anonymous Fragment numbers
 - `SentCodeTypeFirebaseSms` — Firebase delivery
-- Unknown future types — raw attribute dump
+- Unknown future types — raw attribute dump so nothing is hidden
 
 **Force SMS option**
-When Telegram defaults to app delivery and the code doesn't arrive, option `[3]` fires a raw `SendCodeRequest` with `CodeSettings(allow_app=False)` to force SMS instead.
+When Telegram defaults to app delivery and `next_type` is `none` (no automatic fallback), option `[3]` fires a raw `SendCodeRequest` with `CodeSettings(allow_app=False)` to force SMS regardless.
 
-**Every error caught and explained**
-Specific handling for all known Telethon errors on every code path:
+**Every error caught with a fix**
+Specific handling — with plain-English explanations and next steps — for every known Telethon error:
 
-| Error | Plain English message + fix |
-|-------|-----------------------------|
-| `PhoneNumberInvalidError` | Number format wrong |
-| `PhoneNumberBannedError` | Account banned |
+| Error | What it means + what to do |
+|-------|----------------------------|
+| `PhoneNumberInvalidError` | Number format wrong — check country code |
+| `PhoneNumberBannedError` | Account banned from Telegram |
 | `PhoneNumberUnoccupiedError` | No Telegram account for this number |
-| `PhoneNumberFloodError` | Too many requests today |
-| `ApiIdInvalidError` | Wrong API credentials |
-| `ApiIdPublishedFloodError` | API ID leaked/flagged |
-| `FloodWaitError` | Rate limited — shows exact wait time |
-| `AuthRestartError` | Broken session state |
-| `PhoneMigrateError` / `NetworkMigrateError` | DC redirect |
+| `PhoneNumberFloodError` | Too many code requests today — wait 24h |
+| `ApiIdInvalidError` | Wrong API credentials — re-copy from my.telegram.org |
+| `ApiIdPublishedFloodError` | API ID has been flagged — create a new app |
+| `FloodWaitError` | Rate limited — shows exact seconds to wait |
+| `AuthRestartError` | Broken session — re-run script |
+| `PhoneMigrateError` / `NetworkMigrateError` | DC redirect — re-run, Telethon handles it |
+| `AuthKeyInvalidError` | Corrupt session — re-run for fresh session |
 | `PhoneCodeInvalidError` | Wrong code entered |
-| `PhoneCodeExpiredError` | Code timed out |
-| `SessionPasswordNeededError` | 2FA — prompts for cloud password |
+| `PhoneCodeExpiredError` | Code timed out — re-run and enter it quickly |
+| `SessionPasswordNeededError` | 2FA enabled — prompts for cloud password |
 | `PasswordHashInvalidError` | Wrong 2FA password |
 
 **2FA support**
-Detects Two-Factor Authentication automatically and prompts for the cloud password with recovery instructions if forgotten.
+Detects Two-Factor Authentication automatically and prompts for the cloud password, with recovery path if forgotten.
 
 **Screen stays open**
-Every exit path — success or error — ends with `Press Enter to exit` so the terminal window doesn't vanish before the output is read.
+Every exit path — success or error — ends with `Press Enter to exit` so nothing disappears before it's been read.
 
 ---
 
@@ -141,8 +144,8 @@ Every exit path — success or error — ends with `Press Enter to exit` so the 
 The session string, API ID, and API Hash give **full access to the Telegram account**. Treat them like a password:
 
 - Do not commit them to version control
-- Do not share them in chat, email, or documents
-- Store them in a secrets manager or environment variable in any tool that uses them
+- Do not share them in a chat, email, or document
+- Store them in a secrets manager or environment variable in the tool that uses them
 
 ---
 
@@ -157,4 +160,4 @@ The session string, API ID, and API Hash give **full access to the Telegram acco
 
 ---
 
-*Built to solve a real problem: getting a session string without needing to understand MTProto.*
+*Built for people who just want to know why Telegram isn't connecting — not another tool that silently fails.*
